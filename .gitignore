@@ -1,0 +1,9 @@
+# STM32CubeIDE build output
+Debug/
+Release/
+
+# Temporary / OS files
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
