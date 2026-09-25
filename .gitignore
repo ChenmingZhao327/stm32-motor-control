@@ -7,4 +7,5 @@ Release/
 *.bak
 .DS_Store
 Thumbs.db
+
 *.launch
