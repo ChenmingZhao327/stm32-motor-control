@@ -30,37 +30,55 @@
 
 #define NVIC_ISER0  (*(volatile uint32_t *)0xE000E100)
 
+
+#define GPIOC_MODER  (*(volatile uint32_t *)0x40020800)
+#define GPIOC_PUPDR  (*(volatile uint32_t *)0x4002080C)
+
+#define RCC_APB2ENR     (*(volatile uint32_t *)0x40023844)
+#define SYSCFG_EXTICR2  (*(volatile uint32_t *)0x4001380C)
+
+#define EXTI_IMR   (*(volatile uint32_t *)0x40013C00)
+#define EXTI_FTSR  (*(volatile uint32_t *)0x40013C0C)
+#define EXTI_PR    (*(volatile uint32_t *)0x40013C14)
+
+
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
-volatile uint32_t timer_flag = 0;
+volatile uint32_t button_flag = 0;
 
-void TIM2_IRQHandler(void){
-	TIM2_SR &= ~(1<<0);
-	timer_flag  = 1;
+void EXTI9_5_IRQHandler(void){
+	if(EXTI_PR & (1<<5)){
+		EXTI_PR = (1 << 5);
+		button_flag  = 1;
+	}
+
 }
 int main(void)
 {
 	RCC_AHB1ENR |= (1<<0);
-	RCC_APB1ENR |= (1<<0);
+	RCC_AHB1ENR |= (1<<2);
+	RCC_APB2ENR |= (1<<14);
 
 	GPIOA_MODER &= ~(3<<10);
 	GPIOA_MODER |= (1<<10);
+	GPIOC_MODER &= ~(3<<10);
 
-	TIM2_PSC = 15999;
-	TIM2_ARR = 499;
+	GPIOC_PUPDR &= ~(3<<10);
+	GPIOC_PUPDR |= (1<<10);
 
-	TIM2_DIER |= (1<<0);
-	NVIC_ISER0 |= (1<<28);
+	SYSCFG_EXTICR2 &= ~(0xF<<4);
+	SYSCFG_EXTICR2 |=  (2<<4);
+	EXTI_FTSR |= (1<<5);
+	EXTI_IMR |= (1<<5);
 
-	TIM2_CR1 |= (1<<0);
-
+	NVIC_ISER0 = (1<<23);
     /* Loop forever */
 	for(;;){
-		if(timer_flag){
+		if(button_flag){
 			GPIOA_ODR ^= (1<<5);
-			timer_flag = 0;
+			button_flag = 0;
 		}
 	}
 }
