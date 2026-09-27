@@ -15,70 +15,50 @@
  *
  ******************************************************************************
  */
-
+#include "stm32f446xx.h"
 #include <stdint.h>
-#define RCC_AHB1ENR (*(volatile uint32_t *)0x40023830)
-#define GPIOA_MODER (*(volatile uint32_t *)0x40020000)
-#define GPIOA_ODR (*(volatile uint32_t *)0x40020014)
-
-#define RCC_APB1ENR (*(volatile uint32_t *)0x40023840)
-#define TIM2_PSC    (*(volatile uint32_t *)0x40000028)
-#define TIM2_ARR    (*(volatile uint32_t *)0x4000002C)
-#define TIM2_CR1 (*(volatile uint32_t *)0x40000000)
-#define TIM2_DIER (*(volatile uint32_t *)0x4000000C)
-#define TIM2_SR     (*(volatile uint32_t *)0x40000010)
-
-#define NVIC_ISER0  (*(volatile uint32_t *)0xE000E100)
-
-
-#define GPIOC_MODER  (*(volatile uint32_t *)0x40020800)
-#define GPIOC_PUPDR  (*(volatile uint32_t *)0x4002080C)
-
-#define RCC_APB2ENR     (*(volatile uint32_t *)0x40023844)
-#define SYSCFG_EXTICR2  (*(volatile uint32_t *)0x4001380C)
-
-#define EXTI_IMR   (*(volatile uint32_t *)0x40013C00)
-#define EXTI_FTSR  (*(volatile uint32_t *)0x40013C0C)
-#define EXTI_PR    (*(volatile uint32_t *)0x40013C14)
 
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
-volatile uint32_t button_flag = 0;
-
-void EXTI9_5_IRQHandler(void){
-	if(EXTI_PR & (1<<5)){
-		EXTI_PR = (1 << 5);
-		button_flag  = 1;
-	}
-
-}
 int main(void)
 {
-	RCC_AHB1ENR |= (1<<0);
-	RCC_AHB1ENR |= (1<<2);
-	RCC_APB2ENR |= (1<<14);
+	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+	GPIOA->MODER &= ~(3U<<0);
+	GPIOA->MODER |= (2U<<0);
+	GPIOA->AFR[0] &= ~(15U<<0);
+	GPIOA->AFR[0] |= (1U<<0);
 
-	GPIOA_MODER &= ~(3<<10);
-	GPIOA_MODER |= (1<<10);
-	GPIOC_MODER &= ~(3<<10);
+	RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
+	TIM2->PSC = 15;
+	TIM2->ARR = 999;
+	TIM2->CCR1 = 0;
 
-	GPIOC_PUPDR &= ~(3<<10);
-	GPIOC_PUPDR |= (1<<10);
+	TIM2->CCMR1 &= ~(7U<<4);
+	TIM2->CCMR1 |= (6U<<4);
+	TIM2->CCER |= TIM_CCER_CC1E;
 
-	SYSCFG_EXTICR2 &= ~(0xF<<4);
-	SYSCFG_EXTICR2 |=  (2<<4);
-	EXTI_FTSR |= (1<<5);
-	EXTI_IMR |= (1<<5);
+	TIM2->CR1 |= TIM_CR1_ARPE;
+	TIM2->CCMR1 |= TIM_CCMR1_OC1PE;
 
-	NVIC_ISER0 = (1<<23);
+	TIM2->EGR |= TIM_EGR_UG;
+
+	TIM2->CR1 |= TIM_CR1_CEN;
+
     /* Loop forever */
 	for(;;){
-		if(button_flag){
-			GPIOA_ODR ^= (1<<5);
-			button_flag = 0;
-		}
+		    for (int i=0;i<=999;i++)
+		    {
+		        TIM2->CCR1 = i;
+		        for (volatile int j=0;j<1000;j++) {}
+		    }
+
+		    for (int i=999;i>=0;i--)
+		    {
+		        TIM2->CCR1 = i;
+		        for (volatile int j=0;j<1000;j++) {}
+		    }
 	}
 }
