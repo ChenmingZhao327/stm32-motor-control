@@ -23,42 +23,127 @@
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
+volatile uint16_t sample_count = 0;
+volatile uint16_t current_count = 0;
+volatile uint16_t previous_count = 0;
+volatile int32_t delta_count = 0;
+volatile uint8_t flag = 0;
+volatile float motor_rpm = 0.0f;
+
+void motor_forward(void){
+	GPIOA->ODR |= (1U<<8);
+	GPIOA->ODR &= ~(1U<<9);
+}
+
+void motor_backward(void){
+	GPIOA->ODR &= ~(1U<<8);
+	GPIOA->ODR |= (1U<<9);
+}
+
+void TIM4_IRQHandler(void){
+	if(TIM4->SR & TIM_SR_UIF){
+		TIM4->SR &= ~TIM_SR_UIF;
+		sample_count = TIM3->CNT;
+		flag = 1;
+	}
+}
 int main(void)
 {
+	SCB->CPACR |= (0xFU << 20);
+	__DSB();
+	__ISB();
+
 	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
-	GPIOA->MODER &= ~(3U<<0);
-	GPIOA->MODER |= (2U<<0);
-	GPIOA->AFR[0] &= ~(15U<<0);
-	GPIOA->AFR[0] |= (1U<<0);
+	(void)RCC->AHB1ENR;
+
+	GPIOA->ODR &= ~((1U<<8)|(1U<<9));
+
+	GPIOA->MODER &= ~((3U<<16)|(3U<<18));
+	GPIOA->MODER |= ((1U<<16)|(1U<<18));
+
+	GPIOA->MODER &= ~(3U<<10);
+	GPIOA->MODER |= (2U<<10);
+	GPIOA->AFR[0] &= ~(15U<<20);
+	GPIOA->AFR[0] |= (1U<<20);
 
 	RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
+	(void)RCC->APB1ENR;
+
 	TIM2->PSC = 15;
 	TIM2->ARR = 999;
 	TIM2->CCR1 = 0;
 
+	TIM2->CCMR1 &= ~(3U<<0);
 	TIM2->CCMR1 &= ~(7U<<4);
 	TIM2->CCMR1 |= (6U<<4);
-	TIM2->CCER |= TIM_CCER_CC1E;
 
-	TIM2->CR1 |= TIM_CR1_ARPE;
 	TIM2->CCMR1 |= TIM_CCMR1_OC1PE;
+	TIM2->CR1 |= TIM_CR1_ARPE;
 
-	TIM2->EGR |= TIM_EGR_UG;
+	TIM2->CCER &= ~TIM_CCER_CC1P;
+
+	TIM2->EGR = TIM_EGR_UG;
+	TIM2->SR &= ~TIM_SR_UIF;
+
+	TIM2->CCER |= TIM_CCER_CC1E;
 
 	TIM2->CR1 |= TIM_CR1_CEN;
 
+	motor_forward();
+	TIM2->CCR1 = 600;
+
+	RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
+	(void)RCC->APB1ENR;
+
+	GPIOA->MODER &= ~((3U<<12)|(3U<<14));
+	GPIOA->MODER |= ((2U<<12)|(2U<<14));
+
+	GPIOA->AFR[0] &= ~((15U<<24)|(15U<<28));
+	GPIOA->AFR[0] |= ((2U<<24)|(2U<<28));
+
+	TIM3->CCMR1 &= ~((3U<<0)|(3U<<8));
+	TIM3->CCMR1 |= ((1U<<0)|(1U<<8));
+
+	TIM3->SMCR &= ~(7U<<0);
+	TIM3->SMCR |= (3U<<0);
+
+	TIM3->PSC = 0;
+	TIM3->ARR = 0xFFFF;
+	TIM3->EGR = TIM_EGR_UG;
+	TIM3->CR1 |= TIM_CR1_CEN;
+
+	RCC->APB1ENR |= RCC_APB1ENR_TIM4EN;
+	(void)RCC->APB1ENR;
+
+	TIM4->PSC = 15999;
+	TIM4->ARR = 99;
+
+	previous_count = (uint16_t)TIM3->CNT;
+	flag = 0;
+
+	TIM4->EGR |= TIM_EGR_UG;
+	TIM4->SR &= ~TIM_SR_UIF;
+	TIM4->DIER |= TIM_DIER_UIE;
+	NVIC_EnableIRQ(TIM4_IRQn);
+	TIM4->CR1 |= TIM_CR1_CEN;
+
     /* Loop forever */
 	for(;;){
-		    for (int i=0;i<=999;i++)
-		    {
-		        TIM2->CCR1 = i;
-		        for (volatile int j=0;j<1000;j++) {}
-		    }
-
-		    for (int i=999;i>=0;i--)
-		    {
-		        TIM2->CCR1 = i;
-		        for (volatile int j=0;j<1000;j++) {}
-		    }
+		if(flag){
+			uint32_t saved_mask = __get_PRIMASK();
+			__disable_irq();
+			current_count = sample_count;
+			flag=0;
+			__set_PRIMASK(saved_mask);
+			delta_count = (int32_t)current_count - (int32_t)previous_count;
+			if(delta_count>32767){
+				delta_count-= 65536;
+			}
+			else if(delta_count<-32768){
+				delta_count+= 65536;
+			}
+			motor_rpm = delta_count* 60.0f/(1204.44f*0.1f);
+			previous_count = current_count;
+		}
 	}
 }
