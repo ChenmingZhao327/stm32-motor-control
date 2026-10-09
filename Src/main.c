@@ -17,6 +17,7 @@
  */
 #include "stm32f446xx.h"
 #include <stdint.h>
+#include <stdio.h>
 
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
@@ -29,6 +30,15 @@ volatile uint16_t previous_count = 0;
 volatile int32_t delta_count = 0;
 volatile uint8_t flag = 0;
 volatile float motor_rpm = 0.0f;
+
+void usart2_send_str(const char *str){
+	while(*str!='\0'){
+		while(!(USART2->SR&USART_SR_TXE)){
+		}
+		USART2->DR = *str;
+		str++;
+	}
+}
 
 void motor_forward(void){
 	GPIOA->ODR |= (1U<<8);
@@ -47,8 +57,10 @@ void TIM4_IRQHandler(void){
 		flag = 1;
 	}
 }
+
 int main(void)
 {
+	char message[64];
 	SCB->CPACR |= (0xFU << 20);
 	__DSB();
 	__ISB();
@@ -65,6 +77,17 @@ int main(void)
 	GPIOA->MODER |= (2U<<10);
 	GPIOA->AFR[0] &= ~(15U<<20);
 	GPIOA->AFR[0] |= (1U<<20);
+
+	GPIOA->MODER &= ~(3U<<4);
+	GPIOA->MODER |= (2U<<4);
+	GPIOA->AFR[0] &= ~(15U<<8);
+	GPIOA->AFR[0] |= (7U<<8);
+
+	RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
+	(void)RCC->APB1ENR;
+	USART2->BRR = (16000000+115200/2)/115200;
+	USART2->CR1 |= USART_CR1_TE;
+	USART2->CR1 |= USART_CR1_UE;
 
 	RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
 	(void)RCC->APB1ENR;
@@ -121,7 +144,7 @@ int main(void)
 	previous_count = (uint16_t)TIM3->CNT;
 	flag = 0;
 
-	TIM4->EGR |= TIM_EGR_UG;
+	TIM4->EGR = TIM_EGR_UG;
 	TIM4->SR &= ~TIM_SR_UIF;
 	TIM4->DIER |= TIM_DIER_UIE;
 	NVIC_EnableIRQ(TIM4_IRQn);
@@ -142,8 +165,10 @@ int main(void)
 			else if(delta_count<-32768){
 				delta_count+= 65536;
 			}
-			motor_rpm = delta_count* 60.0f/(1204.44f*0.1f);
+			motor_rpm = delta_count* 60.0f/(12.0f*100.37f*0.1f);
 			previous_count = current_count;
+			snprintf(message,sizeof(message),"RPM: %.2f\n",motor_rpm);
+			usart2_send_str(message);
 		}
 	}
 }
