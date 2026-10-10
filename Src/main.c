@@ -24,12 +24,19 @@
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
+#define CONTROL_DT 0.1f
 volatile uint16_t sample_count = 0;
-volatile uint16_t current_count = 0;
-volatile uint16_t previous_count = 0;
-volatile int32_t delta_count = 0;
+uint16_t current_count = 0;
+uint16_t previous_count = 0;
+int32_t delta_count = 0;
 volatile uint8_t flag = 0;
-volatile float motor_rpm = 0.0f;
+float motor_rpm = 0.0f;
+float target_rpm = 80.0f;
+float kp = 0.005f;
+float ki = 0.010f;
+float integral = 0.0f;
+float duty = 0.0f;
+uint16_t control_count = 0;
 
 void usart2_send_str(const char *str){
 	while(*str!='\0'){
@@ -113,7 +120,7 @@ int main(void)
 	TIM2->CR1 |= TIM_CR1_CEN;
 
 	motor_forward();
-	TIM2->CCR1 = 600;
+	TIM2->CCR1 = 0;
 
 	RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
 	(void)RCC->APB1ENR;
@@ -150,6 +157,8 @@ int main(void)
 	NVIC_EnableIRQ(TIM4_IRQn);
 	TIM4->CR1 |= TIM_CR1_CEN;
 
+	usart2_send_str("START\n");
+
     /* Loop forever */
 	for(;;){
 		if(flag){
@@ -165,9 +174,28 @@ int main(void)
 			else if(delta_count<-32768){
 				delta_count+= 65536;
 			}
-			motor_rpm = delta_count* 60.0f/(12.0f*100.37f*0.1f);
+			motor_rpm = delta_count* 60.0f/(12.0f*100.37f*CONTROL_DT);
 			previous_count = current_count;
-			snprintf(message,sizeof(message),"RPM: %.2f\n",motor_rpm);
+
+			control_count++;
+			if(control_count>=100){
+				control_count = 0;
+				if(target_rpm<90.0f)
+					target_rpm = 100.0f;
+				else
+					target_rpm = 80.0f;
+			}
+			float error = target_rpm - motor_rpm;
+			float output = kp*error + ki*integral;
+			if(!((output>=1.0f&&error>0.0f)||(output<=0.0f&&error<0.0f)))
+				integral += CONTROL_DT*error;
+			duty = kp*error + ki*integral;
+			if(duty > 1.0f)
+				duty = 1.0;
+			if(duty < 0.0f)
+				duty = 0.0f;
+			TIM2->CCR1 = (uint32_t)(duty*(TIM2->ARR+1U));
+			snprintf(message,sizeof(message),"%.2f,%.2f,%.1f\n",target_rpm, motor_rpm,duty*100.0f);
 			usart2_send_str(message);
 		}
 	}
