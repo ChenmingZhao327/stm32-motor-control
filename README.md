@@ -36,13 +36,13 @@ The project integrates PWM generation, quadrature encoder feedback, PI control, 
     B --> C[TIM2 PWM]
     C --> D[Motor Driver]
     D --> E[DC Motor]
-    E --> F[Quadrature Encoder]
-    F --> G[TIM3 Encoder Counter]
+    E --> F["Quadrature<br/> Encoder"]
+    F --> G["TIM3 Encoder<br/> Counter"]
     G --> H[RPM Calculation]
     H --> B
     H --> I[USART2 UART]
-    I --> J[Python Visualization]
-    K[TIM4 100ms Interrupt] -.-> H
+    I --> J["Python<br/> Visualization"]
+    K["TIM4 100ms<br/> Interrupt"] -.-> H
 ```
 
 ## Implementation
@@ -52,32 +52,36 @@ TIM2 Channel 1 is configured in PWM Mode 1 to generate a 1 kHz PWM signal. The d
 
 ### Encoder Feedback & RPM Calculation  
 TIM3 Channel 1 and Channel 2 are configured in Encoder Mode 3 to decode quadrature signals from the motor encoder. The encoder count is sampled every 100 ms using TIM4. Motor speed is calculated using the change in encoder counts over the sampling interval. 
-$$
+```math
 RPM = \frac{\Delta count}{CPR} \times \frac{60}{\Delta t}
-$$
+```
 
 ### PI Speed Control
 A PI controller regulates motor speed based on the error between target RPM and measured RPM. The controller combines proportional and integral terms to calculate the PWM duty cycle.
 
 Conditional integration anti-windup is implemented to prevent excessive integral accumulation when the control output reaches its limits.
-$$
+```math
 e_k = r_k - y_k
-$$
+```
 The integral term is updated as:
-$$
+```math
 I_k = I_{k-1} + e_k \Delta t
-$$
+```
 The control output is calculated as:
-$$
+```math
 u_k = K_p e_k + K_i I_k
-$$
+```
 The PI controller was tuned empirically by repeatedly adjusting the proportional and integral gains and observing the motor's response using real-time Python visualization.
 
 The tuning process focused on balancing response speed, overshoot, oscillation, and steady-state tracking accuracy.
 
 The final gains were:
+```math
 K_p = 0.005
+```
+```math
 K_i = 0.010
+```
 
 The controller was tested with reference speed changes between 80 RPM and 100 RPM. 
 
