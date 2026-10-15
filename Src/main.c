@@ -38,6 +38,11 @@ float integral = 0.0f;
 float duty = 0.0f;
 uint16_t control_count = 0;
 
+volatile uint32_t elapsed_cycles = 0;
+volatile uint32_t max_elapsed_cycles = 0;
+volatile uint32_t sample_sequence = 0;
+volatile uint32_t missed_samples = 0;
+
 void usart2_send_str(const char *str){
 	while(*str!='\0'){
 		while(!(USART2->SR&USART_SR_TXE)){
@@ -61,6 +66,7 @@ void TIM4_IRQHandler(void){
 	if(TIM4->SR & TIM_SR_UIF){
 		TIM4->SR &= ~TIM_SR_UIF;
 		sample_count = TIM3->CNT;
+		sample_sequence++;
 		flag = 1;
 	}
 }
@@ -159,12 +165,20 @@ int main(void)
 
 	usart2_send_str("START\n");
 
+	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+	DWT->CYCCNT = 0;
+	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+	uint32_t current_sequence = 0;
+	uint32_t previous_sequence = 0;
     /* Loop forever */
 	for(;;){
 		if(flag){
+			uint32_t start_cycles = DWT->CYCCNT;
 			uint32_t saved_mask = __get_PRIMASK();
 			__disable_irq();
 			current_count = sample_count;
+			current_sequence = sample_sequence;
 			flag=0;
 			__set_PRIMASK(saved_mask);
 			delta_count = (int32_t)current_count - (int32_t)previous_count;
@@ -197,6 +211,14 @@ int main(void)
 			TIM2->CCR1 = (uint32_t)(duty*(TIM2->ARR+1U));
 			snprintf(message,sizeof(message),"%.2f,%.2f,%.1f\n",target_rpm, motor_rpm,duty*100.0f);
 			usart2_send_str(message);
+			elapsed_cycles = DWT->CYCCNT - start_cycles;
+			if(elapsed_cycles > max_elapsed_cycles){
+				max_elapsed_cycles = elapsed_cycles;
+			}
+			if(current_sequence - previous_sequence > 1){
+				missed_samples += (current_sequence - previous_sequence - 1);
+			}
+			previous_sequence = current_sequence;
 		}
 	}
 }
